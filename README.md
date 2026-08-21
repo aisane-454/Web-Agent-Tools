@@ -1,6 +1,6 @@
 # Web Agent Tools
 
-Use signed-in ChatGPT, DeepSeek, and GLM web pages as dependable MCP tools for local coding agents.
+Reuse your web access and let ChatGPT, DeepSeek, and GLM work together as MCP tools for local coding agents.
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.5-339933.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -10,6 +10,23 @@ Use signed-in ChatGPT, DeepSeek, and GLM web pages as dependable MCP tools for l
 Web Agent Tools is a local-first MCP server for delegating self-contained questions, reviews, and bounded deliverables to web AI pages that are already open in the user's everyday Chrome profile.
 
 It is a **capability layer**, not another coding-agent runtime and not a model API proxy. Codex, ZCode, DeepSeek Harness, or another MCP client remains the task owner; this project gives that host a small, auditable interface to web-based intelligence.
+
+### Web access, no provider API key
+
+The project talks to the web pages you already use through Chrome. It does not require provider API keys or add per-request API billing. Whether an individual provider account is free or paid, and what quotas or web limits apply, is still determined by that provider.
+
+### Multi-model collaboration
+
+The three providers are not treated as interchangeable one-shot endpoints. They can take different roles in one bounded workflow:
+
+```text
+DeepSeek  -> executor: generate a deliverable
+ChatGPT   -> reviewer: inspect it and identify changes
+GLM       -> cross-check: independently produce a second result
+All three -> council: answer in parallel, then synthesize a decision
+```
+
+The default role chains are configurable: DeepSeek/GLM for execution, ChatGPT/GLM for review, and DeepSeek/GLM/ChatGPT for advice.
 
 ## Why this project
 
@@ -29,6 +46,8 @@ The host agent keeps control of the workspace, tools, approvals, and final decis
 
 ## Features
 
+- No provider API key required: reuse signed-in web accounts in the user's Chrome.
+- Multi-model workflows with executor, reviewer, advisor, repair, cross-check, and council stages.
 - Six MCP tools for status checks, questions, reviews, deliverables, council-style comparison, and human handoff.
 - Works with the user's existing Chrome session; credentials and browser profiles stay outside this repository.
 - Explicit provider routing for ChatGPT, DeepSeek, and GLM, with configurable role chains.

@@ -1,6 +1,6 @@
 # Web Agent Tools
 
-把已经登录的 ChatGPT、DeepSeek、GLM 网页模型，以可靠、可审计的 MCP 工具提供给本地 coding agent。
+复用已有网页账号，让 ChatGPT、DeepSeek、GLM 通过 MCP 协作服务本地 coding agent。
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.5-339933.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -10,6 +10,23 @@
 Web Agent Tools 是一个本地优先的 MCP server。它把自包含的问题、代码审查和有明确产物契约的子任务，委派给用户日常 Chrome 中已经登录的网页 AI。
 
 它是一个**能力层**，不是新的 coding-agent runtime，也不是模型 API 代理。Codex、ZCode、DeepSeek Harness 或其他 MCP client 仍然负责任务、工作区、工具、审批和最终决策；本项目只提供一组稳定接口，让这些宿主能够调用网页智能资源。
+
+### 复用网页额度，不要求 provider API Key
+
+项目通过 Chrome 调用你已经使用的网页，而不是接入各家 API。因此不要求配置 provider API key，也不会产生本项目额外的按请求 API 费用。具体账号是否免费、额度和网页限制，仍由对应 provider 决定。
+
+### 多模型协作
+
+三个 provider 不只是三个可以轮流调用的网页接口，而是可以在一个有边界的工作流中分工：
+
+```text
+DeepSeek  -> executor：生成产物
+ChatGPT   -> reviewer：审查产物并指出修改项
+GLM       -> cross-check：独立生成第二份结果
+三个模型  -> council：并行回答，再综合成决议
+```
+
+默认角色链可配置：执行使用 DeepSeek/GLM，审查使用 ChatGPT/GLM，咨询使用 DeepSeek/GLM/ChatGPT。
 
 ## 架构
 
@@ -27,6 +44,8 @@ Web Agent Tools
 
 ## 功能
 
+- 不要求 provider API key：复用用户 Chrome 中已登录的网页账号。
+- 支持 executor、reviewer、advisor、repair、cross-check、council 等多模型协作阶段。
 - 六个 MCP 工具：状态检查、提问、审查、产物委派、并行议事和人工接管提示。
 - 复用用户日常 Chrome；登录凭据和浏览器 profile 不进入本仓库。
 - ChatGPT、DeepSeek、GLM 的显式 provider 路由和可配置角色链。
