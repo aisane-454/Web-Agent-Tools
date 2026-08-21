@@ -151,6 +151,8 @@ Other clients are documented here:
 - [ZCode](clients/zcode.md)
 - [DeepSeek Harness](clients/dsh.md)
 
+For end-to-end examples, see the [usage tutorial](docs/USAGE.md).
+
 ## Configuration
 
 Provider role chains are configured in:

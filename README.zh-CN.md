@@ -145,6 +145,8 @@ Codex 桌面端新增或修改 MCP 后，建议新建一个任务，让任务加
 - [ZCode](clients/zcode.md)
 - [DeepSeek Harness](clients/dsh.md)
 
+完整的任务示例见[使用教程](docs/USAGE.zh-CN.md)。
+
 ## 配置和日志
 
 角色链配置：
