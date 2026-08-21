@@ -1,0 +1,120 @@
+js
+
+复制
+// glm-deepseek repaired pipeline
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseDeliverable, runAcceptance, buildDelegatePrompt } from "../dist/delegate.js";
+
+const DELIV_CODE = { format: "code-block" };
+const DELIV_JSON = (keys) => keys ? { format: "json", required_keys: keys } : { format: "json" };
+
+// ---------- parseDeliverable: code-block ----------
+
+test("parseDeliverable code-block: extracts first fenced block and strips noise lines", () => {
+  const raw = [
+    "Here is the answer:",
+    "
+
+ts",
+“”,
+“复制”,
+“const x = 1;”,
+“”,
+“download”,
+“```”,
+“Thanks!”,
+].join(“\n”);
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.equal(r.value, “const x = 1;”);
+});
+
+test(“parseDeliverable code-block: strips language names, copy variants and combos at head/tail”, () => {
+const raw = “python\npython\ncopy code\nts复制\ndef f():\n    return 42\n分享\njs\nbash复制\n”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.equal(r.value, “def f():\n return 42”);
+});
+
+test(“parseDeliverable code-block: empty fenced content returns ok:false”, () => {
+const raw = “前言\n\n\n复制\n\n后记”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+test(“parseDeliverable code-block: no fence but looks like bare code is extracted”, () => {
+const raw = “Some intro text.\nconst answer = 42;”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(“const answer = 42”));
+});
+
+test(“parseDeliverable code-block: empty string returns ok:false”, () => {
+const r = parseDeliverable(“”, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+test(“parseDeliverable code-block: plain prose without fence or code-like content returns ok:false”, () => {
+const r = parseDeliverable(“This is just a plain sentence.\nAnother line of prose.”, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+// ---------- parseDeliverable: json ----------
+
+test(“parseDeliverable json: direct JSON.parse path returns value as string”, () => {
+const raw = ‘{“a”:1,“b”:[2,3]}’;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.equal(r.value, raw);
+});
+
+test("parseDeliverable json: extracts from json fenced block", () => {   const raw = 'Answer:\njson\n{“a”: 1}\n```\ndone’;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(‘“a”’));
+});
+
+test(“parseDeliverable json: extracts balanced-brace segment from prose”, () => {
+const raw = ‘The result is {“a”:1,“b”:{“c”:2}} as requested.’;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(‘“a”’));
+});
+
+test(“parseDeliverable json: empty string returns ok:false”, () => {
+const r = parseDeliverable(“”, DELIV_JSON());
+assert.equal(r.ok, false);
+});
+
+test(“parseDeliverable json: no JSON anywhere returns ok:false”, () => {
+const r = parseDeliverable(“just plain text, nothing parseable here”, DELIV_JSON());
+assert.equal(r.ok, false);
+});
+
+// ---------- runAcceptance ----------
+
+test(“runAcceptance mode none always passes regardless of content”, () => {
+assert.equal(runAcceptance(“”, DELIV_CODE, “none”).passed, true);
+assert.equal(runAcceptance(“{{{{ not balanced”, DELIV_CODE, “none”).passed, true);
+assert.equal(runAcceptance(“garbage”, DELIV_JSON(), “none”).passed, true);
+});
+
+test(“runAcceptance json: passes when object contains all required keys”, () => {
+const r = runAcceptance(‘{“a”:1,“b”:2}’, DELIV_JSON([“a”, “b”]), “parse”);
+assert.equal(r.passed, true);
+});
+
+test(“runAcceptance json: missing required keys fails with proper reason”, () => {
+const r = runAcceptance(‘{“a”:1}’, DELIV_JSON([“a”, “b”, “c”]), “parse”);
+assert.equal(r.passed, false);
+assert.ok(r.reason.startsWith(“missing required keys”));
+});
+
+test(“runAcceptance json: non-object JSON fails”, () => {
+const r = runAcceptance(“[1,2,3]”, DELIV_JSON(), “parse”);
+assert.equal(r.passed, false);
+});
+
+test(“runAcceptance json: unparseable string fails”, () => {
+const r = runAcceptance(“not json at all”, DELIV

@@ -1,0 +1,31 @@
+{
+  "name": "web-agent-tools",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aisane-454/Web-Agent-Tools.git"
+  },
+  "description": "Browser web-AI pages (ChatGPT/DeepSeek/GLM) exposed as MCP tools for any coding agent.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "smoke:mcp": "npm run build && node scripts/smoke-mcp.mjs",
+    "smoke:web": "npm run build && node scripts/smoke-web.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "acorn": "^8.18.0",
+    "playwright": "^1.54.2",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,67 @@
+js
+
+```
+// glm prompt-guard test
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseDeliverable } from "../dist/delegate.js";
+
+const DELIV_CODE = { format: "code-block" };
+const DELIV_JSON = (keys) => keys ? { format: "json", required_keys: keys } : { format: "json" };
+
+test("code-block: extracts fenced content and strips noise lines at head/tail", () => {
+  const raw = "Here is the answer:\n
+```
+
+ts\n\n复制\nconst x = 1;\n\n下载\n```\ndone";
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.equal(r.value, “const x = 1;”);
+});
+
+test(“code-block: strips language name, copy variants and 语言名+复制 combos”, () => {
+const raw = “python\npython\ncopy code\nts复制\ndef f():\n    return 42\n分享\njs\nbash复制\n”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.equal(r.value, “def f():\n return 42”);
+});
+
+test(“code-block: empty string returns ok:false”, () => {
+const r = parseDeliverable(“”, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+test(“code-block: empty fenced content returns ok:false”, () => {
+const raw = “前言\n\n\n复制\n\n后记”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+test(“json: direct JSON.parse path returns value as string”, () => {
+const raw = “{"a":1,"b":[2,3]}”;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.equal(r.value, raw);
+});
+
+test(“json: extracts from json fenced block when direct parse fails", () => {   const raw = "Answer:\njson\n{"a": 1}\n```\nthanks”;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(“"a"”));
+});
+
+test(“json: extracts balanced-brace segment from surrounding prose”, () => {
+const raw = “The result is {"a":1,"b":{"c":2}} as requested.”;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(“"a"”));
+});
+
+test(“json: empty string returns ok:false”, () => {
+const r = parseDeliverable(“”, DELIV_JSON());
+assert.equal(r.ok, false);
+});
+
+```
+
+```

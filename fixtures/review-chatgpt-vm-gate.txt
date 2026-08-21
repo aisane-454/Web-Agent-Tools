@@ -1,0 +1,26 @@
+
+**[严重度: 高] ESM 的 import/export 正则豁免 — 当前逻辑是“检测到疑似 ESM 就直接 { ok: true }”，等价于完全绕过语法验收，而不是只绕过 vm.Script 对模块语法的不兼容；例如 ESM 文件中即使存在明显的后续语法错误，也会被接受。并且正则既会误报，也会漏报：块注释/模板字符串中行首出现 export 可触发误报，而 export{foo}、import{foo}from "x" 等不依赖关键字后空白的合法模块写法可能漏掉。— 修改建议：不要用“发现 ESM ⇒ pass”的策略。 应将结果区分为 valid / invalid / unsupported，ESM 交给真正的 module parser（如项目已有 TS/ESBuild/Babel/Acorn，优先复用）；若验收门无法解析该类型，应 fail-loud，而不是判定语法正确。
+
+
+**[严重度: 高] 顶层 await 的错误消息豁免 — /await is only valid/i 无法证明错误确实来自“ESM 顶层 await”。例如 Script 中普通函数里的非法 await 也可能产生同类 SyntaxError；直接返回 ok 会把真正的 JS 语法错误吞掉。同时不同 Node/V8 版本的错误文案并非稳定 API，存在漏报风险。— 修改建议：不要根据异常字符串将 SyntaxError 转成成功。 顶层 await 应通过 module-aware parser 判断；至少应返回 unsupported_module_syntax 并由外层明确处理，而不是 ok: true。
+
+
+**[严重度: 高] TS/TSX 直接跳过 vm.Script — 如果“跳过”的最终语义也是验收通过，那么任何损坏的 TypeScript 都可以越过 syntax gate，例如未闭合表达式、错误 token、损坏的泛型/类型声明等。因此这个门对 TS deliverable 实际是 fail-open，与“验收门”定位冲突。— 修改建议：TS/TSX 使用 TypeScript compiler API、esbuild、swc 等执行 parse-only 检查；若环境没有解析器，应明确失败为 syntax_check_unsupported，不能静默通过。
+
+
+**[严重度: 中] TS language 正则 /^(ts|tsx|typescript)/i 边界过宽 — tsx-anything、typescript-foo、tsomething 等都会命中，错误的 language metadata 可以意外关闭 JS syntax check；特别是 ts 分支会匹配所有以 ts 开头的字符串。— 修改建议：对规范化后的语言值做精确枚举，例如 ^(?:ts|tsx|typescript)$，若确有 typescriptreact 等别名则显式加入。
+
+
+**[严重度: 中] vm.Script 与真实产物语法环境并不等价 — 即使没有 ESM/TS，vm.Script 检查的是“当前 Node 版本的 Script grammar”。JSX 会被判错；目标 runtime 比当前 Node 老时，又可能接受目标环境实际不支持的新语法。因此它只能证明“当前 Node 能按 Script grammar 解析”，不能泛化为 deliverable 可执行。— 修改建议：把该门明确命名/限定为 Node-script parse check，或根据 deliverable.language/runtime 选择对应 parser；验收目标若是生成代码本身，最好使用项目实际 compiler/parser。
+
+
+**[严重度: 中] ESM 判断发生在 try 之前且先于任何真实解析 — 这使得正则本身成为一个无异常保护的“成功快捷路径”，也是整体 fail-loud 性质被破坏的核心位置。— 修改建议：所有“当前 parser 无法处理”的情况都不应返回 ok: true；可以返回类似 { ok:false, error:"syntax-check unsupported: esm" }，或者增加独立的 status:"unsupported"，让 acceptance 明确拒绝或切换 parser。
+
+
+**[严重度: 低] e instanceof SyntaxError + 非 SyntaxError 重抛 — 这一点本身是正确的 fail-loud 设计：内部异常、资源问题或意外 VM 错误不会被伪装成普通语法失败，更不会被吞掉。需要注意的是，外层 runAcceptance 也必须保持这一性质；如果它在更外层使用 catch { return passed:true }、忽略异常或把异常降级为跳过检查，就会重新变成 fail-open。— 修改建议：保留当前非 SyntaxError throw，并要求 acceptance 顶层将 checker 异常视为验收失败或直接中止，而非成功。
+
+
+**[严重度: 中] 当前返回类型无法表达“没检查” — {ok:true} 同时代表“实际解析成功”和“因为 ESM/TS/top-level-await 被豁免”，审计上无法区分 verified 与 bypassed，后续很容易误把“未验证”当成“已验证”。— 修改建议：至少改为三态，例如 valid | invalid | unsupported；作为强验收门时只允许 valid 通过。
+
+
+结论：当前方案还不适合作为严格 acceptance syntax gate。 vm.Script 本身用于普通 JavaScript Script 的语法预检没有问题，且“只消费 SyntaxError、其他异常重抛”的设计是正确的；真正危险的是三个 fail-open 豁免：TS 跳过、ESM 正则跳过、顶层 await 按错误文本跳过。它们都会把“无法由当前 checker 验证”错误地转换成“语法有效”。最关键的原则应改成：无法检查 ≠ 检查通过；验收门必须 fail-loud，unsupported 要么切换合适 parser，要么拒绝通过。

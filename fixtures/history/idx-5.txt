@@ -1,0 +1,17 @@
+[严重度: 高] 发送结果分支 sent.outcome !== "sent" — 对既非 "sent" 也非 "unknown" 的结果（如 "failed"）抛出可重试的 UI_DRIFT。但此判断发生在 send() 调用之后，任何非确定性的失败都可能实际已提交消息，作为可重试错误返回会让调用方重试并造成重复发送，违背该函数自述的幂等原则。— 建议：将所有非 "sent" 的发送结果一律归入 SEND_IDEMPOTENCY_UNKNOWN，除非 worker 能严格保证 "failed" 意味着“确定未提交”。
+
+[严重度: 高] watchAnswerUntilIdle 的空转判定 — “空闲即完成”的启发式在推理类模型（长思考停顿）或网络卡顿时会出现假阳性，导致提前提取到截断的答案并被当作最终结果返回，且无任何完整性校验。— 建议：在判定完成后增加二次确认（如答案文本在短窗口内不再变化、或存在“停止生成按钮消失”等终态信号），并在 after 与 streamedAnswer 明显不一致时打标或重读。
+
+[严重度: 中] 新答案判定条件 after.count <= baseline.count && after.latestText === baseline.latestText — 判定逻辑存在双向偏差： 对旧答案的“重新生成/编辑”会使文本变化但计数不变，被误判为“有新答案”并返回旧轮内容； 某些站点折叠或清理历史消息会使 count 下降，真实新答案存在时可能误报 UI_DRIFT。— 建议：发送前记录一个“轮次锚点”（如发送前的消息节点引用/ID），以锚点之后出现的节点作为本轮答案，而非依赖 count+文本双重巧合。
+
+[严重度: 中] 中止信号处理 — context.signal 触发的 AbortError 若发生在发送后，会被内层 catch 吞掉并改写为 SEND_IDEMPOTENCY_UNKNOWN；发生在 copyLatestAnswer 中时更是被 DOM 回退分支直接吞掉，函数照常返回结果而非传播取消语义。调用方（尤其使用了 AbortController 的编排层）将无法感知任务已被取消。— 建议：在 catch/回退分支中先判断 signal.aborted 或 error.name === "AbortError"，单独重抛明确的取消错误。
+
+[严重度: 中] copyLatestAnswer 失败的 DOM 回退 — 回退条件只检查 after.latestText.trim() 非空，但该文本可能是被问题 3 误判的旧轮答案（复制失败往往正说明选择器漂移，此时 after 的来源同样可疑），存在返回错误轮次内容且静默成功的风险。— 建议：回退前至少校验该文本与 baseline 的差异（非空、非完全等于 baseline），否则上抛错误。
+
+[严重度: 中] 输入校验 — 仅检查 actual.trim() 非空，既未校验 prompt 本身非空（空 prompt 会误报 UI_DRIFT，掩盖真实原因），也未校验 composer 内容与 prompt 一致（部分插入或残留内容不会被察觉）。— 建议：函数入口先校验 prompt 为非空字符串；插入后比较 actual 与 prompt（做空白归一化）。
+
+[严重度: 中] 错误包装丢失上下文 — 内层 catch 将所有非幂等类错误（包括 TypeError 等编程缺陷）统一改写为 SEND_IDEMPOTENCY_UNKNOWN，原始错误与堆栈信息丢失，排障困难且可能掩盖真实缺陷。— 建议：将原始 error 作为 cause 附加到包装的 ToolError 上（new ToolError(code, msg, { cause: error })）。
+
+[严重度: 低] 死代码 — streamedAnswer 在回调中持续累加但从未被使用（答案最终取自 readLatestAnswer/copy），白白占用内存且易误导维护者。— 建议：删除该变量，或真正将其用于与 after.latestText 的一致性校验。
+
+[严重度: 低] TOCTOU 竞态与健壮性细节 — inspect 的三项检查与 send 之间存在时间窗，页面状态可能在窗口内变化；lease.release() 若自身抛错会掩盖原始异常；answer 若为 null/undefined，末尾 answer.trim() 会抛 TypeError 被错误包装。— 建议：考虑在 send 前做一次轻量复查；release 包裹 try/catch；对 answer 做空值防御后再 trim。

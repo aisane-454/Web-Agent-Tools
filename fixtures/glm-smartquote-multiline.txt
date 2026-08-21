@@ -1,0 +1,13 @@
+          // glm scroll-collect test
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseDeliverable } from "../dist/delegate.js";
+
+const DELIV_CODE = { format: "code-block" };
+
+test("code-block: extracts fenced content", () => {
+  const raw = [
+    "Here is the answer:",
+    "
+
+      ts",“”,“复制”,“const x = 1;”,“”,“下载”,“```”,“done”,].join(“\n”);const r = parseDeliverable(raw, DELIV_CODE);assert.equal(r.ok, true);assert.equal(r.value, “const x = 1;”);});test(“code-block: strips combos”, () => {const raw = “python\ncopy code\nts复制\ndef f():\n    return 42\n”;const r = parseDeliverable(raw, DELIV_CODE);assert.equal(r.ok, true);});

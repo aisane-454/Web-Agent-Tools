@@ -1,0 +1,209 @@
+js
+
+```
+// Delegated to web executor (glm) 2026-08-19.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseDeliverable, runAcceptance, buildDelegatePrompt } from "../dist/delegate.js";
+
+const DELIV_CODE = { format: "code-block" };
+const DELIV_JSON = (keys) => keys ? { format: "json", required_keys: keys } : { format: "json" };
+
+// ---------- parseDeliverable: code-block ----------
+
+test("parseDeliverable code-block: extracts first fenced block and strips noise lines", () => {
+  const raw = [
+    "Here is the answer:",
+    "
+```
+
+ts",
+“”,
+“复制”,
+“const x = 1;”,
+“”,
+“download”,
+“```”,
+“Thanks!”,
+].join(“\n”);
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.equal(r.value, “const x = 1;”);
+});
+
+test(“parseDeliverable code-block: strips language name and copy variants as noise”, () => {
+const raw = “python\npython\ncopy code\ndef f():\n    return 42\n分享\njs\n”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.equal(r.value, “def f():\n return 42”);
+});
+
+test(“parseDeliverable code-block: empty fenced content returns ok:false”, () => {
+const raw = “前言\n\n\n复制\n\n后记”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, false);
+assert.ok(typeof r.reason === “string” && r.reason.length > 0);
+});
+
+test(“parseDeliverable code-block: no fence but looks like bare code is extracted”, () => {
+const raw = “Some intro text.\nconst answer = 42;”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(“const answer = 42”));
+});
+
+test(“parseDeliverable code-block: empty string returns ok:false”, () => {
+const r = parseDeliverable(“”, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+test(“parseDeliverable code-block: fence present but only whitespace/blank lines inside returns ok:false”, () => {
+const raw = “\n   \n\t\n”;
+const r = parseDeliverable(raw, DELIV_CODE);
+assert.equal(r.ok, false);
+});
+
+// ---------- parseDeliverable: json ----------
+
+test(“parseDeliverable json: direct JSON.parse path”, () => {
+const r = parseDeliverable(‘{“a”:1,“b”:[2,3]}’, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.equal(r.value, ‘{“a”:1,“b”:[2,3]}’);
+});
+
+test("parseDeliverable json: extracts from json fenced block", () => {   const raw = 'Answer:\njson\n{“a”: 1}\n```\ndone’;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(‘“a”’));
+});
+
+test(“parseDeliverable json: extracts balanced-brace segment from prose”, () => {
+const raw = ‘The result is {“a”:1,“b”:{“c”:2}} as requested.’;
+const r = parseDeliverable(raw, DELIV_JSON());
+assert.equal(r.ok, true);
+assert.ok(r.value.includes(‘“a”’));
+});
+
+test(“parseDeliverable json: empty string returns ok:false”, () => {
+const r = parseDeliverable(“”, DELIV_JSON());
+assert.equal(r.ok, false);
+});
+
+test(“parseDeliverable json: no JSON anywhere returns ok:false”, () => {
+const r = parseDeliverable(“just plain text, nothing parseable here”, DELIV_JSON());
+assert.equal(r.ok, false);
+});
+
+test(“parseDeliverable json: with required_keys still returns value as string”, () => {
+const r = parseDeliverable(‘{“x”: 1}’, DELIV_JSON([“x”]));
+assert.equal(r.ok, true);
+assert.equal(typeof r.value, “string”);
+});
+
+// ---------- runAcceptance ----------
+
+test(“runAcceptance mode none always passes”, () => {
+assert.equal(runAcceptance(“”, DELIV_CODE, “none”).passed, true);
+assert.equal(runAcceptance(“{{{{ not balanced”, DELIV_CODE, “none”).passed, true);
+assert.equal(runAcceptance(“garbage”, DELIV_JSON(), “none”).passed, true);
+});
+
+test(“runAcceptance json: passes when object contains all required keys”, () => {
+const r = runAcceptance(‘{“a”:1,“b”:2}’, DELIV_JSON([“a”, “b”]), “strict”);
+assert.equal(r.passed, true);
+});
+
+test(“runAcceptance json: missing required keys fails with proper reason”, () => {
+const r = runAcceptance(‘{“a”:1}’, DELIV_JSON([“a”, “b”, “c”]), “strict”);
+assert.equal(r.passed, false);
+assert.ok(r.reason.startsWith(“missing required keys”));
+});
+
+test(“runAcceptance json: non-object JSON fails”, () => {
+const r = runAcceptance(“[1,2,3]”, DELIV_JSON(), “strict”);
+assert.equal(r.passed, false);
+});
+
+test(“runAcceptance json: unparseable string fails”, () => {
+const r = runAcceptance(“not json at all”, DELIV_JSON(), “strict”);
+assert.equal(r.passed, false);
+});
+
+test(“runAcceptance code-block: balanced braces pass”, () => {
+const r = runAcceptance(“function f() {\n return { a: 1 };\n}”, DELIV_CODE, “strict”);
+assert.equal(r.passed, true);
+});
+
+test(“runAcceptance code-block: unbalanced braces fail”, () => {
+const r = runAcceptance(“function f() {\n return { a: 1;\n}”, DELIV_CODE, “strict”);
+assert.equal(r.passed, false);
+});
+
+test(“runAcceptance code-block: braces inside strings do not affect balance”, () => {
+const code = [
+‘const s = “{ unbalanced } but fine”;’,
+‘const t = “}}}”;’,
+“const u = ‘{’;”,
+“function f() { return s + t + u; }”,
+].join(“\n”);
+const r = runAcceptance(code, DELIV_CODE, “strict”);
+assert.equal(r.passed, true);
+});
+
+test(“runAcceptance code-block: braces inside comments do not affect balance”, () => {
+const code = [
+“// comment with { unbalanced brace”,
+“/* block comment with } brace”,
+" still comment } */“,
+“function f() { return 1; }”,
+].join(”\n");
+const r = runAcceptance(code, DELIV_CODE, “strict”);
+assert.equal(r.passed, true);
+});
+
+// ---------- buildDelegatePrompt ----------
+
+test(“buildDelegatePrompt: contains task_spec tag, task text and deliverable contract”, () => {
+const input = {
+task: “Write a fizzbuzz implementation in TypeScript.”,
+deliverable: { format: “code-block” },
+contract: “Return only one code block, no explanation.”,
+};
+const p = buildDelegatePrompt(input);
+assert.ok(p.includes(“<task_spec>”));
+assert.ok(p.includes(“</task_spec>”));
+assert.ok(p.includes(“fizzbuzz”));
+assert.ok(p.includes(“code block”));
+});
+
+test(“buildDelegatePrompt: includes <context> tag when context provided”, () => {
+const input = {
+task: “Review this snippet.”,
+context: “The project uses Node 22 and ESM modules.”,
+deliverable: { format: “json”, required_keys: [“verdict”] },
+contract: “Return JSON only.”,
+};
+const p = buildDelegatePrompt(input);
+assert.ok(p.includes(“<context>”));
+assert.ok(p.includes(“Node 22”));
+});
+
+test(“buildDelegatePrompt: omits <context> tag when no context”, () => {
+const input = {
+task: “Summarize the diff.”,
+deliverable: { format: “json” },
+contract: “Return JSON only.”,
+};
+const p = buildDelegatePrompt(input);
+assert.ok(!p.includes(“<context>”));
+});
+
+test(“buildDelegatePrompt: returns a string”, () => {
+const p = buildDelegatePrompt({ task: “do the thing”, deliverable: { format: “code-block” } });
+assert.equal(typeof p, “string”);
+assert.ok(p.length > 0);
+});
+
+```
+
+```

@@ -1,0 +1,21 @@
+ts
+
+```
+/**
+ * 将数组 `arr` 切成每块最多 `size` 个元素的子数组。
+ * 最后一块元素数量可能不足 `size`。若 `size` 非正数则返回空数组。
+ * @template T - 数组元素类型
+ * @param arr - 待切分的数组
+ * @param size - 每块的长度
+ * @returns 由子数组组成的二维数组
+ */
+export function chunk<T>(arr: T[], size: number): T[][] {
+  if (!Number.isInteger(size) || size <= 0) return [];
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+```
