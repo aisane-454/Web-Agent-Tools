@@ -81,7 +81,24 @@ The tools are called by the host agent. They do not appear as models in a model 
 
 The server deliberately fails when multiple tabs match the same provider. This avoids silently sending a task to the wrong conversation.
 
+## Recommended installation: ask your agent
+
+You usually do not need to type the installation commands yourself. After starting Chrome with CDP and signing in to the provider pages, ask your current coding agent to install and verify the MCP server:
+
+```text
+Install Web Agent Tools from https://github.com/aisane-454/Web-Agent-Tools
+in a local tools directory. Read its README first. Run the dependency install
+and build, register it as an MCP server for this client with
+WEB_AGENT_CDP_URL=http://127.0.0.1:4319, then call web_status to verify all
+available pages. Keep all changes inside the Web Agent Tools directory and do
+not modify my application source files.
+```
+
+The agent can choose the correct registration format for Codex, ZCode, or DeepSeek Harness. Login, CAPTCHA, and risk-control steps remain visible browser actions for the user.
+
 ## Quick start
+
+The following is the manual fallback when you prefer to install it yourself.
 
 ### 1. Start Chrome with CDP
 

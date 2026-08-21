@@ -79,7 +79,23 @@ Web Agent Tools
 
 如果同一个 provider 有多个匹配标签，服务会直接报错，避免把任务发到错误会话。
 
+## 推荐安装方式：让 Agent 自己安装
+
+通常不需要手动输入安装命令。先启动带 CDP 的 Chrome，并手动登录三个网页，然后把下面的任务交给当前 coding agent：
+
+```text
+请从 https://github.com/aisane-454/Web-Agent-Tools 安装 Web Agent Tools。
+先阅读它的 README，在本地 tools 目录中完成依赖安装和构建，按照当前客户端
+注册 MCP，并设置 WEB_AGENT_CDP_URL=http://127.0.0.1:4319，最后调用
+web_status 验证可用的网页。所有改动限制在 Web Agent Tools 目录内，
+不要修改我的业务代码。
+```
+
+Agent 会根据当前客户端选择 Codex、ZCode 或 DeepSeek Harness 的正确注册方式。登录、验证码和风控仍需要用户在可见浏览器中处理。
+
 ## 快速开始
+
+下面是希望手动安装时使用的备用流程。
 
 ### 1. 启动 Chrome CDP
 
