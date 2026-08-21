@@ -1,121 +1,182 @@
-# web-agent-tools
+# Web Agent Tools
 
-把 ChatGPT / DeepSeek / GLM 三个**网页版**模型封装成六个 MCP 工具，供任意外层 coding agent（ZCode、Codex、dsh…）把流水线步骤委派给网页执行。外层只发任务书、只收无损产物——中间过程不占外层上下文，但全部快照在本地、随要随取（pull 式审计）。
+Use signed-in ChatGPT, DeepSeek, and GLM web pages as dependable MCP tools for local coding agents.
 
-## 架构：tool 位 + 三层防御 + 升级链
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.5-339933.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**English** | [简体中文](README.zh-CN.md)
+
+Web Agent Tools is a local-first MCP server for delegating self-contained questions, reviews, and bounded deliverables to web AI pages that are already open in the user's everyday Chrome profile.
+
+It is a **capability layer**, not another coding-agent runtime and not a model API proxy. Codex, ZCode, DeepSeek Harness, or another MCP client remains the task owner; this project gives that host a small, auditable interface to web-based intelligence.
+
+## Why this project
+
+Many coding agents are excellent at local execution but do not expose every web model a user already has access to. Web Agent Tools keeps those responsibilities separate:
+
+```text
+Host coding agent
+  | MCP / stdio
+  v
+Web Agent Tools
+  | CDP
+  v
+User's Chrome: ChatGPT | DeepSeek | GLM
 ```
-外层 agent（ZCode / Codex / …）
-  │  task_spec + 产物契约 + 验收
-  ▼
-任务书（源头形态约束：禁多行字符串数组、\n 转义、直引号）
-  │
-  ├─ 角色路由（~/.web-agent-tools/config.json，配置驱动）
-  │    executor = [deepseek, glm]   reviewer = [chatgpt, glm]   advisor = [deepseek, glm, chatgpt]
-  │
-  ├─ 第一层：机械提取器（零网络）——fence 救援 / 噪声剥离 / 弯引号成对转义 / 字符串断行还原
-  ├─ 机器验收——JSON parse+required_keys；代码：括号平衡 + acorn 语法门（三态，TS 显式"未检查"）
-  └─ 失败 → 升级链（声明式、有界、全程可审计）：
-       #1 修复兜底     损坏产物+原始全文 → 跨模型修复（deepseek 优先）
-       #2 审查-修订    review_rounds≤2：reviewer 审 → executor 修 → 复验
-       #3 交叉验证     cross_check：并行副生成 → 机械 LCS diff → 一致率+冲突双方节选
-       #4 议会         web_council：三家并行独立作答 → 汇总席四字段决议
-```
 
-横切：事件溯源日志（turns.jsonl + artifacts/ 全文快照）、fail-loud 错误闭联、
-每页 surface 租约、salvage 超时回收、Decision Packet（审查/议会结论机械压缩）。
+The host agent keeps control of the workspace, tools, approvals, and final decisions. Web Agent Tools handles browser targeting, bounded prompts, extraction, validation, recovery, and local audit artifacts.
 
-## 六个工具
+## Features
 
-| 工具 | 用途 |
-|---|---|
-| `web_status` | 三页健康探测（force 刷新） |
-| `web_ask` | 一问一答（advisor 链）；`salvage: true` 只读回收超时后的迟到答案 |
-| `web_review` | 结构化审查（reviewer 链，300s 墙钟）；自动附 decision packet；`packet_only` 压 78% |
-| `web_delegate` | 无损产物委派（executor 链）+ 修复兜底 + `review_rounds` + `cross_check` |
-| `web_council` | 三家并行议事 + 汇总席四字段决议（共识/分歧/建议/少数意见） |
-| `web_handoff` | 报告页面需要的人工动作（登录/验证码/风控） |
+- Six MCP tools for status checks, questions, reviews, deliverables, council-style comparison, and human handoff.
+- Works with the user's existing Chrome session; credentials and browser profiles stay outside this repository.
+- Explicit provider routing for ChatGPT, DeepSeek, and GLM, with configurable role chains.
+- Lossless deliverable extraction with machine acceptance for JSON and fenced code blocks.
+- Bounded repair, review, and cross-check stages instead of unbounded model loops.
+- Append-only turn logs and full answer artifacts for later inspection.
+- Fail-closed browser behavior: ambiguous tabs, login prompts, risk checks, and uncertain sends become explicit errors.
+- MCP stdio transport, so each host can start and stop the server with its own task lifecycle.
 
-## 前置条件
+## Tools
 
-1. Node ≥22.5（开发用 26.x）
-2. 日常 Chrome 以调试端口启动（CDP 4319）：`open -na "Google Chrome" --args --remote-debugging-port=4319`（保持用户配置）
-3. 三个网页恰好各一个已登录标签
+| Tool | Use it for |
+| --- | --- |
+| `web_status` | Check the three browser surfaces, login state, composer readiness, and generation state. |
+| `web_ask` | Ask one self-contained question and receive the final answer. Supports read-only salvage after a timeout. |
+| `web_review` | Request a structured review with severity, findings, and a compact decision packet. |
+| `web_delegate` | Produce a bounded JSON or code deliverable with extraction, acceptance, repair, review, and optional cross-check. |
+| `web_council` | Ask two or three providers independently and return a four-field synthesis. |
+| `web_handoff` | Explain the manual action required when a page needs login, CAPTCHA, risk-control, or terms handling. |
 
-## 安装（每客户端）
+The tools are called by the host agent. They do not appear as models in a model picker and they do not replace the host agent's native execution loop.
 
-- **ZCode**：见 `clients/zcode.md`（`.zcode/config.json`）
-- **Codex**：见 `clients/codex.md`（`codex mcp add`，无人值守需 `-s danger-full-access`）
-- **dsh**：见 `clients/dsh.md`（本机未装则暂缓）
+## Requirements
+
+- Node.js `22.5` or newer.
+- Chrome running with a DevTools Protocol endpoint, normally `http://127.0.0.1:4319`.
+- One signed-in tab for each provider:
+  - `chatgpt.com`
+  - `chat.deepseek.com`
+  - `chatglm.cn`
+
+The server deliberately fails when multiple tabs match the same provider. This avoids silently sending a task to the wrong conversation.
+
+## Quick start
+
+### 1. Start Chrome with CDP
+
+Start the Chrome installation that contains the accounts you want to use and expose CDP on port `4319`. For a standard macOS installation:
 
 ```sh
-npm install && npm run build
-node scripts/smoke-mcp.mjs   # 六工具在线 + 三页健康
+open -na "Google Chrome" --args --remote-debugging-port=4319
 ```
 
-## 快速开始（Codex）
+Keep exactly one matching tab per provider, sign in manually, and leave those tabs open. The server does not copy credentials or create a managed browser profile.
 
-先让日常 Chrome 以 CDP 4319 启动，并在同一个 Chrome 中分别登录
-ChatGPT、DeepSeek、GLM。然后在项目目录执行：
+### 2. Build the MCP server
 
 ```sh
-export WEB_AGENT_TOOLS_DIR="$(pwd)"
+git clone https://github.com/aisane-454/Web-Agent-Tools.git
+cd Web-Agent-Tools
 npm ci
 npm run build
+```
 
+### 3. Register it in Codex
+
+```sh
 codex mcp add web-agent-tools \
   --env WEB_AGENT_CDP_URL=http://127.0.0.1:4319 \
-  -- node "$WEB_AGENT_TOOLS_DIR/dist/index.js"
+  -- node "$PWD/dist/index.js"
+```
 
+Check the registration:
+
+```sh
 codex mcp list
 ```
 
-新建一个 Codex 任务后，直接用自然语言请求即可，例如：
+For the desktop app, start a new Codex task after adding or changing an MCP server so the task loads the current tool list.
+
+### 4. Use it from the host agent
+
+Example request:
 
 ```text
-先调用 web_status 检查网页 Agent 状态。
-然后用 web_delegate 让 DeepSeek 分析这个方案，输出结构化审查结果。
+Call web_status first. Then use web_delegate to ask DeepSeek to produce
+a JSON risk review of the following plan. Require keys: risks, mitigations,
+and recommendation. Do not modify local files.
 ```
 
-也可以明确指定工具：`web_ask` 用于提问，`web_review` 用于审查，
-`web_delegate` 用于带验收的任务委派，`web_council` 用于并行咨询多个网页模型。
-这些工具不会出现在模型选择器中，而是作为 MCP 工具由 Codex 调用。
+Other clients are documented here:
 
-其他客户端的配置见 `clients/`：
+- [Codex](clients/codex.md)
+- [ZCode](clients/zcode.md)
+- [DeepSeek Harness](clients/dsh.md)
 
-- `clients/codex.md`
-- `clients/zcode.md`
-- `clients/dsh.md`
+## Configuration
 
-## 配置
+Provider role chains are configured in:
 
-`~/.web-agent-tools/config.json`（角色链）、`WEB_AGENT_*` 环境变量（各级超时，
-见 `src/browser/cdpWorker.ts` 的 `configuredTimeout`）。
+```text
+~/.web-agent-tools/config.json
+```
 
-## 测试与日志
+The main environment variables are:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `WEB_AGENT_CDP_URL` | `http://127.0.0.1:4319` | Chrome DevTools endpoint. |
+| `WEB_AGENT_*` | See source | Optional timeout and browser tuning values. |
+
+The provider registry and role chains are intentionally configuration-driven so additional web providers can be added without changing the MCP contract.
+
+## Error and recovery behavior
+
+The server does not blindly retry browser sends. In particular:
+
+- `SEND_IDEMPOTENCY_UNKNOWN` means the prompt may already have reached the page. Inspect the visible page or use `web_ask` with `salvage: true` before considering another send.
+- `LOGIN_REQUIRED`, `CAPTCHA_REQUIRED`, `RISK_CONTROL`, and `TERMS_DIALOG` require a human action in the visible browser. Use `web_handoff` for the exact guidance.
+- `PROVIDER_BUSY` means another call owns that provider surface.
+- `UI_DRIFT`, `RESPONSE_TIMEOUT`, and `BROWSER_STEP_TIMEOUT` are explicit failures that can be investigated or retried according to the caller's policy.
+
+Turn metadata is written to:
+
+```text
+~/.web-agent-tools/logs/turns.jsonl
+~/.web-agent-tools/logs/artifacts/
+```
+
+Logs contain fingerprints and structured metadata; answer artifacts are kept separately so the host can pull them when needed.
+
+## Development
 
 ```sh
-node --test tests/            # 52 项零成本回归（含 13 条真实历史损坏样本）
-node scripts/replay-glm-history.mjs --offline   # 历史样本离线回归
-tail -f ~/.web-agent-tools/logs/turns.jsonl     # 事件流
-ls ~/.web-agent-tools/logs/artifacts/           # 全文快照（pull 式审计）
+npm ci
+npm test
+npm run smoke:mcp
 ```
 
-## 设计记录
+`npm test` runs the zero-cost regression suite. `npm run smoke:mcp` builds the server and checks the MCP surface; browser smoke tests additionally require a reachable CDP endpoint and signed-in pages.
 
-决策、事故、复盘全部在 `notes/`（按日期）。关键脉络：
-tool 位转向（08-19）→ 委派管线与提取器（08-20）→ 机械修复+修复兜底+语法门（08-20）
-→ 旧 runtime 退役（08-21）→ chatgpt DOM 漂移排障（08-21）→ 升级链四算子（08-21）。
+## Design notes
 
-## 血泪教训（写入代码注释的)
+This project is informed by several open-source projects, but it is not a fork or a replacement for them:
 
-- 网页 DOM 会漂移：完成判定/复制选择器以 turn 容器为锚（2026-08-21 chatgpt 事故）
-- "无法检查 ≠ 检查通过"：验收门三态，unsupported 显式标注
-- 跨块全局正则会吞掉相邻结构：fence 处理要局部化
-- 短间隔重复发送同款提示会触发 provider 限速：验证脚本要错峰
+- [codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web): native task context, streaming, observability, and browser-backed model integration patterns.
+- [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness): plugin boundaries, MCP contracts, explicit capability composition, and event-oriented workflows.
+
+The important boundary here is intentional: Web Agent Tools remains an MCP capability layer that can serve multiple host agents and multiple web providers. It does not rewrite the host agent's model routing or local tool runtime.
+
+## Security and limitations
+
+- This is browser automation, not an official provider API.
+- Use your own accounts and comply with each provider's terms and workspace policies.
+- Your Chrome login state is sensitive. Keep the CDP endpoint on loopback and do not expose it to a network.
+- Web UI changes can break selectors. The server is designed to fail explicitly rather than silently target an unknown page.
+- The project does not ship credentials, browser profiles, or a background service.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
-
-Source and design attributions are listed in [NOTICE.md](NOTICE.md).
+MIT. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) for attribution and third-party design references.
